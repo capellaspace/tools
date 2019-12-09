@@ -7,6 +7,7 @@ This is a Python 3.7 plugin in to [Rasterio](https://github.com/mapbox/rasterio)
 ```
 $ git clone https://github.com/capellaspace/tools.git
 $ cd tools
+$ cd capella-order
 $ pip install -U pip
 $ pip install -e .
 ```
