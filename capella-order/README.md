@@ -9,7 +9,7 @@ $ git clone https://github.com/capellaspace/tools.git
 $ cd tools
 $ cd capella-order
 $ pip install -U pip
-$ pip install -e .
+$ python setup.py install
 ```
 
 ## CLI
