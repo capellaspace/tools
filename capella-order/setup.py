@@ -41,6 +41,6 @@ setup(
     install_requires=inst_reqs,
     entry_points="""
       [rasterio.rio_plugins]
-      capella-order=capella.scripts.cli:capella_order
+      capella=capella.scripts.cli:capella
       """,
 )

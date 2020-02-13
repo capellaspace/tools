@@ -13,6 +13,7 @@ import struct
 
 capella_url = 'https://api.data.capellaspace.com'
 token = 'token'
+data_collections = 'catalog/collections'
 catsearch = 'catalog/stac/search'
 orders = 'orders'
 download = 'download'
@@ -21,49 +22,203 @@ chunk_size = 1024
 
 logger = logging.getLogger(__name__)
 
+
+def get_parameters(ctx):
+    return (ctx.obj['username'], ctx.obj['password'],
+            ctx.obj['collection'], ctx.obj['area'], ctx.obj['limit'])
+
+
 @click.group(short_help="Capella Space related utilities.")
+@click.option('--area', type=click.File('r'), default=None, help="A geojson\
+     file containing request area and filter")
+@click.option('--collection', default=None, help="If area is not specified then\
+     the name of a collection to retrieve")
+@click.option('--credentials', default=None)
+@click.option('--limit', type=int, default=10, help="Specify maximum number of\
+     results to return.")
+@click.option('--verbose', '-v', is_flag=True, help="Verbose output")
 @click.pass_context
-def capella():
-    """Capella subcommands."""
-    pass
+def capella(ctx, area, collection, credentials, limit, verbose):
+    """Capella Space.
+    """
+    if verbose:
+        logger.setLevel(logging.INFO)
+
+    if area is None and collection is None:
+        click.Abort('One of "collection" or "area" is required.')
+
+    ctx.ensure_object(dict)
+
+    if credentials and not os.path.exists(credentials):
+        click.Abort(f"Credentials path: {credentials} does not exist.")
+    elif credentials:
+        with open(credentials) as f:
+            data = json.load(f)
+            ctx.obj['username'] = data['username']
+            ctx.obj['password'] = data['password']
+    else:
+        ctx.obj['username'] = None
+        ctx.obj['password'] = None
+
+    ctx.obj['collection'] = collection
+    ctx.obj['limit'] = limit
+
+    if area:
+        geojson = json.load(area)
+        ctx.obj['area'] = geojson
+    else:
+        ctx.obj['area'] = area
+
+
+@capella.command(short_help="Query Capella STAC catalog.")
+@click.pass_context
+def query(ctx):
+    username, password, collection, area, limit = get_parameters(ctx)
+
+    # prompts for username go here so that the 'help' option still works
+    if not username:
+        username, password = ask_for_creds()
+
+    if not (area or collection):
+        click.Abort('Require either an area or a collection name to query the\
+             catalog.')
+
+    auth = aiohttp.BasicAuth(login=username, password=password)
+
+    result = asyncio.run(get_query(area, collection, limit, auth))
+    print(json.dumps(result))
+
+
+@capella.command(short_help="Obtain authentication headers (useful for debug).")
+@click.pass_context
+def auth_headers(ctx):
+    username, password, collection, area, limit = get_parameters(ctx)
+
+    # prompts for username go here so that the 'help' option still works
+    if not username:
+        username, password = ask_for_creds()
+
+    auth = aiohttp.BasicAuth(login=username, password=password)
+
+    result = asyncio.run(get_auth_headers(auth))
+    print(json.dumps(result))
+
+
+@capella.command(short_help="Query Capella for available collections.")
+@click.pass_context
+def collections(ctx):
+    username, password, collection, area, limit = get_parameters(ctx)
+
+    # prompts for username go here so that the 'help' option still works
+    if not username:
+        username, password = ask_for_creds()
+
+    auth = aiohttp.BasicAuth(login=username, password=password)
+
+    result = asyncio.run(get_collections(auth))
+    print(json.dumps(result))
 
 
 @capella.command(short_help="Order Capella data.")
-@click.argument('area', type=click.File('r'))
 @click.argument('output', type=click.Path(exists=True))
-@click.option('--credentials', default=None)
-@click.option('--limit', type=int, default=10, help="Specify maximum number of results to return.")
-@click.option('--requests', type=int, default=10, help="Specify maximum number of concurrent requests.")
-@click.option('--polarization', default='HH', help="Polarization requested e.g. HH.")
-@click.option('--verbose', '-v', is_flag=True, help="Verbose output")
+@click.option('--requests', type=int, default=10, help="Specify maximum number\
+     of concurrent requests.")
 @click.pass_context
-def capella_order(ctx, area, output, credentials, limit, requests, polarization, verbose):
+def order(ctx, output, requests):
     """Order Capella Space data
     
     Parameters
 
-    area : A geojson file containing request area and filter
     output: The output directory (must exist) for the downloaded data
     """
+    username, password, collection, area, limit = get_parameters(ctx)
 
-    if verbose:
-        logger.setLevel(logging.INFO)
-
-    if credentials is None:
+    # prompts for username go here so that the 'help' option still works
+    if not username:
         username, password = ask_for_creds()
-    elif not os.path.exists(credentials):
-        click.Abort(f"Credentials path: {credentials} does not exist.")
-    else:
-        with open(credentials) as f:
-            data = json.load(f)
-            username = data['username']
-            password = data['password']
-
-    geojson = json.load(area)
 
     auth = aiohttp.BasicAuth(login=username, password=password)
 
-    asyncio.run(get_data(geojson, output, limit, requests, polarization, auth))
+    asyncio.run(get_data(area, collection, output, limit, requests, auth))
+
+
+async def get_query(geojson, collection, limit, auth):
+    filters = {
+        'limit': limit
+    }
+
+    if not (collection and geojson):
+        hdrs = await get_auth_headers(auth)
+
+        if collection:
+            async with aiohttp.ClientSession(headers=hdrs) as session:
+                async with session.get(
+                                    f"{capella_url}/{data_collections}/"
+                                    f"{collection}/items?limit={limit}"
+                                    ) as response:
+                    status = response.status
+                    logger.info(f"STAC response code {status}")
+                    result = await response.json()
+                    logger.info(f"STAC: {result}")
+                    return result
+
+        if geojson:
+            if 'properties' in geojson:
+                props = geojson['properties']
+                for k, v in props.items():
+                    filters[k] = v
+
+            if 'geometry' in geojson:
+                g = shape(geojson['geometry'])
+                filters['bbox'] = list(g.bounds)
+
+            logger.info(f"Filter: {filters}")
+
+            async with aiohttp.ClientSession(headers=hdrs) as session:
+                async with session.post(
+                                        f"{capella_url}/{catsearch}",
+                                        json=filters) as response:
+                    status = response.status
+                    logger.info(f"STAC response code {status}")
+                    result = await response.json()
+                    logger.info(f"STAC: {result}")
+                    return result
+    else:
+        click.Abort('Can only specify one of collection or geojson area.')
+
+
+async def get_collections(auth):
+    hdrs = await get_auth_headers(auth)
+    async with aiohttp.ClientSession(headers=hdrs) as session:
+        async with session.get(f"{capella_url}/{data_collections}") as response:
+            status = response.status
+            logger.info(f"Collections response code {status}")
+            result = await response.json()
+            logger.info(f"Collections: {result}")
+            return result
+
+
+async def get_auth_headers(auth):
+    logger.info("Requesting auth token.")
+    async with aiohttp.ClientSession(auth=auth) as client:
+        async with client.post(f"{capella_url}/{token}") as response:
+            status = response.status
+            logger.info(f"Received response with status {status}")
+
+            if status == 201:
+                body = await response.json()
+                headers = {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/geo+json',
+                    'Authorization':'Bearer ' + body['accessToken']
+                    }
+                return headers
+
+            if status == 401:
+                click.Abort('Username and Password is incorrect.')
+
+            if status == 403:
+                click.Abort('Too many failed login attempts. Try again later.')
 
 
 async def get_url(url, output, session):
@@ -85,84 +240,57 @@ async def parallel_fetch(urls, output, request_limit):
         return await asyncio.gather(*tasks)
 
 
-async def get_data(geojson, output, data_limit, request_limit, polarization, auth=None):
-    logger.info("Requesting auth token.")
-    async with aiohttp.ClientSession(auth=auth) as client:
-        async with client.post(f"{capella_url}/{token}") as response:
-            status = response.status
-            logger.info(f"Received response with status {status}")
+async def get_data(geojson, collection, output, data_limit, request_limit,
+                    auth=None):
+    hdrs = await get_auth_headers(auth)
+    async with aiohttp.ClientSession(headers=hdrs) as session:
+        result = await get_query(geojson, collection, data_limit, auth)
+        # make an order
+        features = result["features"]
+        granules = []
 
-            if status == 201:
-                body = await response.json()
-                headers = {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/geo+json',
-                    'Authorization':'Bearer ' + body['accessToken']
-                    }
-                async with aiohttp.ClientSession(headers=headers) as session:
-                    props = geojson['properties']
-                    g = shape(geojson['geometry'])
+        for f in features:
+            item = {'CollectionId': f['collection'], 'GranuleId': f['id']}
+            granules.append(item)
 
-                    filters = {
-                        'bbox': list(g.bounds),
-                        'time': f"{props['startTime']}/{props['endTime']}",
-                        'limit': data_limit,
-                        'sort' : props['sort']
-                    }
-                    logger.info(f"Filter: {filters}")
+        order = {'Items': granules}
 
-                    async with session.post(
-                                            f"{capella_url}/{catsearch}",
-                                            json=filters) as response:
-                        status = response.status
-                        logger.info(f"STAC response code {status}")
-                        result = await response.json()
-                        logger.info(f"STAC: {result}")
+        logger.info(f"Order: {order}")
 
-                        # make an order
-                        features = result["features"]
-                        granules = []
+        # Place the order and inspect the result
+        async with session.post(
+                f"{capella_url}/{orders}", json=order) as response:
+            logger.info(f"Order response code: {response.status}")
+            result = await response.json()
+            logger.info(f"Order: {result}")
 
-                        for f in features:
-                            item = {'CollectionId': f['collection'], 'GranuleId': f['id']}
-                            granules.append(item)
+            # Get the STAC records with the signed URLs using the /download endpoint
+            async with session.get(f"{capella_url}/{orders}/{result['orderId']}"
+                                   f"/{download}") as response:
+                logger.info(f"Download response code: {response.status}")
+                result = await response.json()
+                logger.info(f"Download: {result}")
 
-                        order = {'Items': granules}
+                urls = []
 
-                        logger.info(f"Order: {order}")
+                for f in result:
+                    polarizations = f['properties']['sar:polarization']
+                    for p in polarizations:
+                        urls.append(f['assets'][p]['href'])
 
-                        # Place the order and inspect the result
-                        async with session.post(f"{capella_url}/{orders}", json=order) as response:
-                            logger.info(f"Order response code: {response.status}")
-                            result = await response.json()
-                            logger.info(f"Order: {result}")
+                logger.info(urls)
 
-                            # Get the STAC records with the signed URLs using the /download endpoint
-                            async with session.get(f"{capella_url}/{orders}/{result['orderId']}/{download}") as response:
-                                logger.info(f"Download response code: {response.status}")
-                                result = await response.json()
-                                logger.info(f"Download: {result}")
-
-                                urls = []
-                                for f in result:
-                                    if polarization in f['assets']:
-                                        urls.append(f['assets'][polarization]['href'])
-
-                                logger.info(urls)
-
-                                if len(urls) > 0:
-                                    await parallel_fetch(urls, output, request_limit)
-                                else:
-                                    click.abort('No matching records found.')
-
-            if status == 401:
-                click.Abort('Username and Password is incorrect.')
-
-            if status == 403:
-                click.Abort('Too many failed login attempts. Try again later.')
+                if len(urls) > 0:
+                    await parallel_fetch(urls, output, request_limit)
+                else:
+                    click.abort('No matching records found.')
 
 
 def ask_for_creds():
     username = click.prompt('What is your username?')
     password = click.prompt('What is your password?', hide_input=True)
     return username, password
+
+
+if __name__ == '__main__':
+    capella(obj={})
