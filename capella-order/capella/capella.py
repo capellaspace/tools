@@ -99,6 +99,7 @@ async def get_auth_headers(auth):
                 headers = {
                     'Content-Type': 'application/json',
                     'Accept': 'application/geo+json',
+                    'Connection': 'close',
                     'Authorization':'Bearer ' + body['accessToken']
                     }
                 return headers
@@ -124,7 +125,9 @@ async def get_url(url, output, session):
 
 async def parallel_fetch(urls, output, request_limit):
     connector = aiohttp.TCPConnector(limit=request_limit)
-    async with aiohttp.ClientSession(connector=connector) as session:
+    async with aiohttp.ClientSession(
+                            connector=connector,
+                            headers={'Connection': 'close'}) as session:
         tasks = [get_url(url, output, session) for url in urls]
         return await asyncio.gather(*tasks)
 
