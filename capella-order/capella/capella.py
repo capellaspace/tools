@@ -167,7 +167,7 @@ async def get_data(geojson, collection, output, data_limit, page, request_limit,
                 urls = []
 
                 for f in download_result:
-                    polarizations = f['properties']['sar:polarization']
+                    polarizations = f['properties']['sar:polarizations']
                     for p in polarizations:
                         urls.append(f['assets'][p]['href'])
 
