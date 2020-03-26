@@ -9,9 +9,12 @@ import aiohttp
 import json
 import logging
 import os
+import warnings
 
 
 logger = logging.getLogger(__name__)
+
+warnings.filterwarnings("ignore")
 
 
 def get_parameters(ctx):
@@ -57,7 +60,7 @@ def capella(ctx, area, collection, credentials, limit, page, verbose):
 
     ctx.obj['collection'] = collection
     ctx.obj['limit'] = limit
-    ctx.obj['page'] = 0
+    ctx.obj['page'] = page
 
     if area:
         geojson = json.load(area)
