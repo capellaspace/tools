@@ -74,7 +74,7 @@ async def get_collections(auth, limit, page):
     hdrs = await get_auth_headers(auth)
     async with aiohttp.ClientSession(headers=hdrs) as session:
         async with session.get(f"{capella_url}/{data_collections}"
-                               f"?limit={limit}&page=1"
+                               f"?limit={limit}&page={page}"
               ) as response:
             status = response.status
             logger.info(f"Collections response code {status}")

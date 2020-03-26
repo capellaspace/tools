@@ -31,7 +31,7 @@ def get_parameters(ctx):
 @click.option('--credentials', default=None)
 @click.option('--limit', type=int, default=10, help="Specify maximum number of\
      results to return.")
-@click.option('--page', type=int, default=0, help="Specify page to return.")
+@click.option('--page', type=int, default=1, help="Specify page to return.")
 @click.option('--verbose', '-v', is_flag=True, help="Verbose output")
 @click.pass_context
 def capella(ctx, area, collection, credentials, limit, page, verbose):
