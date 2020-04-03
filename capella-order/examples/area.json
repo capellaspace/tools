@@ -11,8 +11,6 @@
         ]]
   },
   "properties": {
-    "startTime" : "2019-08-01T00:00:00Z",
-    "endTime" : "2019-12-31T12:31:12Z",
     "sort":  [{"field": "dtr:start_datetime"}]
   }
 }
