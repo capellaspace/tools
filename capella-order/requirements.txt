@@ -2,4 +2,3 @@ click
 numpy~=1.15
 aiohttp
 rasterio>=1.0.28
-shapely
