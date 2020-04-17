@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 capella_url = 'https://api.data.capellaspace.com'
 token = 'token'
 data_collections = 'catalog/collections'
-catsearch = 'catalog/stac/search'
+catsearch = 'catalog/search'
 orders = 'orders'
 download = 'download'
 
