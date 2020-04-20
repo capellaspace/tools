@@ -6,7 +6,6 @@ import async_timeout
 import logging
 import os
 
-from shapely.geometry import shape
 import struct
 
 
@@ -16,7 +15,7 @@ logger = logging.getLogger(__name__)
 capella_url = 'https://api.data.capellaspace.com'
 token = 'token'
 data_collections = 'catalog/collections'
-catsearch = 'catalog/stac/search'
+catsearch = 'catalog/search'
 orders = 'orders'
 download = 'download'
 
@@ -24,50 +23,41 @@ chunk_size = 1024
 
 
 async def get_query(geojson, collection, limit, page, auth):
-    if not (collection and geojson):
-        hdrs = await get_auth_headers(auth)
+    hdrs = await get_auth_headers(auth)
 
-        if collection:
-            async with aiohttp.ClientSession(headers=hdrs) as session:
-                async with session.get(
-                                    f"{capella_url}/{data_collections}/"
-                                    f"{collection}/items?limit={limit}"
-                                    f"&page={page}"
-                                    ) as response:
-                    status = response.status
-                    logger.info(f"STAC response code {status}")
-                    result = await response.json()
-                    logger.info(f"STAC: {result}")
-                    return result
+    filters = {
+        'limit': limit,
+        'page': page
+    }
 
-        if geojson:
-            filters = {
-                'limit': limit,
-                'page': page
-            }
+    if 'properties' in geojson:
+        props = geojson['properties']
+        for k, v in props.items():
+            filters[k] = v
 
-            if 'properties' in geojson:
-                props = geojson['properties']
-                for k, v in props.items():
-                    filters[k] = v
+    if 'geometry' in geojson:
+        filters['intersects'] = geojson['geometry']
 
-            if 'geometry' in geojson:
-                g = shape(geojson['geometry'])
-                filters['bbox'] = list(g.bounds)
-
-            logger.info(f"Filter: {filters}")
-
-            async with aiohttp.ClientSession(headers=hdrs) as session:
-                async with session.post(
-                                        f"{capella_url}/{catsearch}",
-                                        json=filters) as response:
-                    status = response.status
-                    logger.info(f"STAC response code {status}")
-                    result = await response.json()
-                    logger.info(f"STAC: {result}")
-                    return result
+    if 'collections' in filters:
+        logger.warn(f"Filter already contains collection: {filters['collections']}")
     else:
-        click.Abort('Can only specify one of collection or geojson area.')
+        filters['collections'] = [collection]
+
+    logger.info(f"Filter: {filters}")
+
+    async with aiohttp.ClientSession(headers=hdrs) as session:
+        req = f"{capella_url}/{catsearch}"
+
+        logger.info(f"Request: {req}")
+
+        async with session.post(
+                                req,
+                                json=filters) as response:
+            status = response.status
+            logger.info(f"STAC response code {status}")
+            result = await response.json()
+            logger.info(f"STAC: {result}")
+            return result
 
 
 async def get_collections(auth, limit, page):

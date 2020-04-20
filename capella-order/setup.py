@@ -18,7 +18,6 @@ with open("README.md") as f:
 inst_reqs = [
     "click",
     "rasterio>=1.0.28",
-    "shapely",
     "aiohttp",
     "numpy~=1.15"
 ]
