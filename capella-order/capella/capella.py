@@ -30,12 +30,12 @@ async def get_query(geojson, collection, limit, page, auth):
         'page': page
     }
 
-    if 'properties' in geojson:
+    if geojson and 'properties' in geojson:
         props = geojson['properties']
         for k, v in props.items():
             filters[k] = v
 
-    if 'geometry' in geojson:
+    if geojson and 'geometry' in geojson:
         filters['intersects'] = geojson['geometry']
 
     if 'collections' in filters:
