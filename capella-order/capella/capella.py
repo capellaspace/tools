@@ -12,7 +12,7 @@ import struct
 logger = logging.getLogger(__name__)
 
 
-capella_url = 'https://api.data.capellaspace.com'
+capella_url = 'https://api.capellaspace.com'
 token = 'token'
 data_collections = 'catalog/collections'
 catsearch = 'catalog/search'
