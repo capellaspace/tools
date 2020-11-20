@@ -33,7 +33,7 @@ def amplitude_image(input_file_path, output_file_path, meta_path=None):
     output_ds.GetRasterBand(1).WriteArray(np.abs(slc_image * scale))
     
     meta_dict = input_ds.GetMetadata_Dict()
-    output_ds.GetRasterBand(1).SetMetadata(meta_dict)
+    output_ds.SetMetadata(meta_dict)
 
     input_ds = None
     output_ds = None
